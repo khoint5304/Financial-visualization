@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,minimum-scale=1.0" />
+    <title>Stock Chart with Interval Selection</title>
+    <script type="text/javascript"
+        src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+    <style>
+        body {
+            padding: 0;
+            margin: 0;
+            font-family: sans-serif;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        .controls {
+            padding: 10px;
+            background-color: #f0f0f0;
+            border-bottom: 1px solid #ccc;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .controls input,
+        .controls select,
+        .controls button {
+            padding: 5px;
+            font-size: 14px;
+        }
+
+        #chartContainer {
+            flex-grow: 1;
+            position: relative;
+        }
+
+        #statusMessage {
+            margin-left: 10px;
+            font-style: italic;
+            color: #666;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="controls">
+        <label for="stockCodeInput">Stock:</label>
+        <input type="text" id="stockCodeInput" placeholder="e.g., FPT" value="FPT" size="6">
+
+        <label for="intervalSelect">Interval:</label>
+        <select id="intervalSelect">
+        </select>
+
+        <button id="loadChartButton">Load</button>
+        <span id="statusMessage"></span>
+    </div>
+
+    <div id="chartContainer"></div>
+
+    <script type="text/javascript">
+        const chartContainer = document.getElementById('chartContainer');
+        const stockCodeInput = document.getElementById('stockCodeInput');
+        const intervalSelect = document.getElementById('intervalSelect');
+        const loadChartButton = document.getElementById('loadChartButton');
+        const statusMessage = document.getElementById('statusMessage');
+
+        let chart = null;
+        let candlestickSeries = null;
+        let currentChartData = null;
+
+        const SUPPORTED_INTERVALS = ['1h', '1D', '1W', '1M'];
+        const DEFAULT_INTERVAL = '1D';
+
+        function populateIntervalSelect() {
+            SUPPORTED_INTERVALS.forEach(interval => {
+                const option = document.createElement('option');
+                option.value = interval;
+                option.textContent = interval;
+                if (interval === DEFAULT_INTERVAL) {
+                    option.selected = true;
+                }
+                intervalSelect.appendChild(option);
+            });
+        }
+
+        function initChart() {
+            if (chart) {
+                chart.remove();
+            }
+            chart = LightweightCharts.createChart(chartContainer, {
+                width: chartContainer.clientWidth,
+                height: chartContainer.clientHeight,
+                layout: {
+                    backgroundColor: '#ffffff',
+                    textColor: 'rgba(33, 56, 77, 1)',
+                },
+                grid: {
+                    vertLines: { color: 'rgba(197, 203, 206, 0.5)' },
+                    horzLines: { color: 'rgba(197, 203, 206, 0.5)' },
+                },
+                crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+                rightPriceScale: { borderColor: 'rgba(197, 203, 206, 0.8)' },
+                timeScale: { borderColor: 'rgba(197, 203, 206, 0.8)', timeVisible: true, secondsVisible: false },
+            });
+
+            candlestickSeries = chart.addSeries(LightweightCharts.CandlestickSeries, {
+                upColor: '#26a69a',
+                downColor: '#ef5350',
+                borderDownColor: '#ef5350',
+                borderUpColor: '#26a69a',
+                wickDownColor: '#ef5350',
+                wickUpColor: '#26a69a',
+            });
+        }
+
+        function displayIntervalData(intervalKey) {
+            if (!candlestickSeries) {
+                setStatus("Chart series not ready.", true);
+                return;
+            }
+            if (currentChartData && currentChartData[intervalKey]) {
+                const data = currentChartData[intervalKey];
+                candlestickSeries.setData(data);
+                setStatus(`Displaying data for ${stockCodeInput.value.toUpperCase()} (Interval: ${intervalKey}, ${data.length} points)`);
+                chart.timeScale().fitContent();
+            } else {
+                setStatus(`No data found for interval ${intervalKey}.`, true);
+                if (candlestickSeries) candlestickSeries.setData([]);
+            }
+        }
+
+        async function loadChartData() {
+            const stockCode = stockCodeInput.value.trim().toUpperCase();
+            const selectedInterval = intervalSelect.value;
+
+            if (!stockCode) {
+                setStatus("Enter stock code.", true);
+                return;
+            }
+            if (!selectedInterval) {
+                setStatus("Select an interval.", true);
+                return;
+            }
+
+            setStatus(`Loading ${stockCode} (Interval: ${selectedInterval})...`);
+            currentChartData = null;
+            initChart();
+
+            try {
+                const response = await fetch(`/api/get_stock_csv?symbol=${stockCode}&interval=${selectedInterval}`);
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({ error: `HTTP error ${response.status}` }));
+                    throw new Error(errorData.error || `Cannot load data for ${stockCode} with interval ${selectedInterval}`);
+                }
+
+                const csvText = await response.text();
+
+                Papa.parse(csvText, {
+                    header: true,
+                    dynamicTyping: true,
+                    skipEmptyLines: true,
+                    complete: function (results) {
+                        if (results.errors.length > 0) {
+                            console.error("CSV Parse Errors:", results.errors);
+                            setStatus(`Error parsing CSV for ${stockCode}. Check console.`, true);
+                            if (candlestickSeries) candlestickSeries.setData([]);
+                            return;
+                        }
+
+                        const parsedData = results.data;
+                        if (parsedData && parsedData.length > 0) {
+                            const chartFormattedData = parsedData.map(row => ({
+                                time: row.time,
+                                open: row.open,
+                                high: row.high,
+                                low: row.low,
+                                close: row.close
+                            })).filter(item =>
+                                item.time !== undefined && item.time !== null &&
+                                typeof item.open === 'number' &&
+                                typeof item.high === 'number' &&
+                                typeof item.low === 'number' &&
+                                typeof item.close === 'number'
+                            );
+
+                            if (chartFormattedData.length > 0) {
+                                currentChartData = {
+                                    [selectedInterval]: chartFormattedData
+                                };
+                                displayIntervalData(selectedInterval);
+                            } else {
+                                setStatus(`No valid chart data processed for ${stockCode} (Interval: ${selectedInterval}). Check CSV format.`, true);
+                                if (candlestickSeries) candlestickSeries.setData([]);
+                            }
+                        } else {
+                            setStatus(`No data returned or parsed for ${stockCode} (Interval: ${selectedInterval}).`, true);
+                            if (candlestickSeries) candlestickSeries.setData([]);
+                        }
+                    },
+                    error: function (error, file) {
+                        console.error("PapaParse Error:", error);
+                        setStatus(`Error parsing CSV: ${error.message}`, true);
+                        if (candlestickSeries) candlestickSeries.setData([]);
+                    }
+                });
+
+            } catch (error) {
+                console.error("Load chart data error:", error);
+                setStatus(`Error: ${error.message}`, true);
+                if (candlestickSeries) candlestickSeries.setData([]);
+            }
+        }
+
+        function setStatus(message, isError = false) {
+            statusMessage.textContent = message;
+            statusMessage.style.color = isError ? 'red' : '#333';
+        }
+
+        loadChartButton.addEventListener('click', loadChartData);
+        stockCodeInput.addEventListener('keypress', (event) => {
+            if (event.key === 'Enter') loadChartData();
+        });
+
+        window.addEventListener('resize', () => {
+            if (chart) {
+                chart.resize(chartContainer.clientWidth, chartContainer.clientHeight);
+            }
+        });
+
+        window.addEventListener('DOMContentLoaded', () => {
+            populateIntervalSelect();
+            setStatus("Enter stock code, select interval, and click Load.");
+        });
+    </script>
+</body>
+
+</html>
