@@ -132,5 +132,9 @@ def api_get_stock_csv():
     else:
         return jsonify({"error": f"Không thể lấy hoặc tạo file dữ liệu cho {stock_code} với interval {interval_req}"}), 404
 
+@app.route('/Data/<path:filename>')
+def serve_data_file(filename):
+    return send_from_directory('Data', filename)
+
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
