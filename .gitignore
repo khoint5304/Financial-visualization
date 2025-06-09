@@ -1,0 +1,9 @@
+.venv/
+.vscode/
+run.bat
+*.exe
+*.csv
+*.zip
+*.docx
+.env
+__pycache__/
