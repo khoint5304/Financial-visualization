@@ -192,7 +192,48 @@
         const SUPPORTED_INTERVALS = ['1h', '1D', '1W', '1M'];
         const DEFAULT_INTERVAL = '1D';
 
-        function renderTableFromCsv(csvUrl, containerId) {
+        function renderCompanyProfile(csvUrl, containerId) {
+            const container = document.getElementById(containerId);
+            if (!container) return;
+            container.innerHTML = '<p>Đang tải...</p>';
+
+            const urlWithCacheBusting = `${csvUrl}?t=${new Date().getTime()}`;
+
+            fetch(urlWithCacheBusting)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`Không tìm thấy file: ${csvUrl.split('/').pop().split('?')[0]}`);
+                    }
+                    return response.text();
+                })
+                .then(csvText => {
+                    Papa.parse(csvText, {
+                        header: true,
+                        skipEmptyLines: true,
+                        complete: (results) => {
+                            if (results.errors.length > 0 || results.data.length === 0) {
+                                container.innerHTML = '<p>Không có dữ liệu tổng quan.</p>';
+                                return;
+                            }
+
+                            const profileData = results.data[0];
+                            const companyProfile = profileData.company_profile || 'Chưa có thông tin.';
+                            const industry = profileData.icb_name2 || 'Chưa có thông tin.';
+
+                            let profileHTML = `<p style="text-align: justify; line-height: 1.6; font-size: 14px;">${companyProfile}</p>`;
+                            profileHTML += `<p style="font-size: 14px;"><strong>Ngành:</strong> ${industry}</p>`;
+
+                            container.innerHTML = profileHTML;
+                        }
+                    });
+                })
+                .catch(error => {
+                    console.error(`Lỗi khi tải ${containerId}:`, error);
+                    container.innerHTML = `<p style="color: red;">${error.message}</p>`;
+                });
+        }
+
+        function renderShareholdersTable(csvUrl, containerId) {
             const container = document.getElementById(containerId);
             if (!container) return;
             container.innerHTML = '<p>Đang tải...</p>';
@@ -215,24 +256,23 @@
                                 container.innerHTML = '<p>Không có dữ liệu.</p>';
                                 return;
                             }
-                            const headers = results.meta.fields;
                             const data = results.data;
 
                             let tableHTML = '<table class="info-table"><thead><tr>';
-                            headers.forEach(header => {
-                                tableHTML += `<th>${header}</th>`;
-                            });
+                            tableHTML += '<th>Cổ đông</th>';
+                            tableHTML += '<th>Số lượng cổ phiếu</th>';
+                            tableHTML += '<th>Tỉ lệ cổ phiếu</th>';
+                            tableHTML += '<th>Ngày cập nhật</th>';
                             tableHTML += '</tr></thead><tbody>';
 
                             data.forEach(row => {
+                                const quantity = parseFloat(row.quantity);
+                                const percent = parseFloat(row.share_own_percent);
                                 tableHTML += '<tr>';
-                                headers.forEach(header => {
-                                    if (header.toLowerCase() === 'url' && row[header]) {
-                                        tableHTML += `<td><a href="${row[header]}" target="_blank">Xem</a></td>`;
-                                    } else {
-                                        tableHTML += `<td>${row[header] || ''}</td>`;
-                                    }
-                                });
+                                tableHTML += `<td>${row.share_holder || ''}</td>`;
+                                tableHTML += `<td>${!isNaN(quantity) ? quantity.toLocaleString('vi-VN') : ''}</td>`;
+                                tableHTML += `<td>${!isNaN(percent) ? (percent * 100).toFixed(2) + '%' : ''}</td>`;
+                                tableHTML += `<td>${row.update_date || ''}</td>`;
                                 tableHTML += '</tr>';
                             });
 
@@ -247,13 +287,164 @@
                 });
         }
 
+        function renderOfficersTable(csvUrl, containerId) {
+            const container = document.getElementById(containerId);
+            if (!container) return;
+            container.innerHTML = '<p>Đang tải...</p>';
+
+            const urlWithCacheBusting = `${csvUrl}?t=${new Date().getTime()}`;
+
+            fetch(urlWithCacheBusting)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`Không tìm thấy file: ${csvUrl.split('/').pop().split('?')[0]}`);
+                    }
+                    return response.text();
+                })
+                .then(csvText => {
+                    Papa.parse(csvText, {
+                        header: true,
+                        skipEmptyLines: true,
+                        complete: (results) => {
+                            if (results.errors.length > 0 || results.data.length === 0) {
+                                container.innerHTML = '<p>Không có dữ liệu.</p>';
+                                return;
+                            }
+                            const data = results.data;
+
+                            let tableHTML = '<table class="info-table"><thead><tr>';
+                            tableHTML += '<th>Tên</th>';
+                            tableHTML += '<th>Vị trí</th>';
+                            tableHTML += '<th>Số lượng</th>';
+                            tableHTML += '<th>Tỉ lệ sở hữu</th>';
+                            tableHTML += '<th>Thời gian cập nhật</th>';
+                            tableHTML += '</tr></thead><tbody>';
+
+                            data.forEach(row => {
+                                const quantity = parseFloat(row.quantity);
+                                const percent = parseFloat(row.officer_own_percent);
+                                tableHTML += '<tr>';
+                                tableHTML += `<td>${row.officer_name || ''}</td>`;
+                                tableHTML += `<td>${row.officer_position || ''}</td>`;
+                                tableHTML += `<td>${!isNaN(quantity) ? quantity.toLocaleString('vi-VN') : ''}</td>`;
+                                tableHTML += `<td>${!isNaN(percent) ? (percent * 100).toFixed(4) + '%' : ''}</td>`;
+                                tableHTML += `<td>${row.update_date || ''}</td>`;
+                                tableHTML += '</tr>';
+                            });
+
+                            tableHTML += '</tbody></table>';
+                            container.innerHTML = tableHTML;
+                        }
+                    });
+                })
+                .catch(error => {
+                    console.error(`Lỗi khi tải ${containerId}:`, error);
+                    container.innerHTML = `<p style="color: red;">${error.message}</p>`;
+                });
+        }
+
+        function renderSubsidiariesTable(csvUrl, containerId) {
+            const container = document.getElementById(containerId);
+            if (!container) return;
+            container.innerHTML = '<p>Đang tải...</p>';
+
+            const urlWithCacheBusting = `${csvUrl}?t=${new Date().getTime()}`;
+
+            fetch(urlWithCacheBusting)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`Không tìm thấy file: ${csvUrl.split('/').pop().split('?')[0]}`);
+                    }
+                    return response.text();
+                })
+                .then(csvText => {
+                    Papa.parse(csvText, {
+                        header: true,
+                        skipEmptyLines: true,
+                        complete: (results) => {
+                            if (results.errors.length > 0 || results.data.length === 0) {
+                                container.innerHTML = '<p>Không có dữ liệu.</p>';
+                                return;
+                            }
+                            const data = results.data;
+
+                            let tableHTML = '<table class="info-table"><thead><tr>';
+                            tableHTML += '<th>Tên công ty</th>';
+                            tableHTML += '<th>Loại</th>';
+                            tableHTML += '<th>Tỉ lệ sở hữu</th>';
+                            tableHTML += '</tr></thead><tbody>';
+
+                            data.forEach(row => {
+                                const percent = parseFloat(row.ownership_percent);
+                                tableHTML += '<tr>';
+                                tableHTML += `<td>${row.organ_name || ''}</td>`;
+                                tableHTML += `<td>${row.type || ''}</td>`;
+                                tableHTML += `<td>${!isNaN(percent) ? (percent * 100).toFixed(2) + '%' : ''}</td>`;
+                                tableHTML += '</tr>';
+                            });
+
+                            tableHTML += '</tbody></table>';
+                            container.innerHTML = tableHTML;
+                        }
+                    });
+                })
+                .catch(error => {
+                    console.error(`Lỗi khi tải ${containerId}:`, error);
+                    container.innerHTML = `<p style="color: red;">${error.message}</p>`;
+                });
+        }
+
+        function renderNewsList(csvUrl, containerId) {
+            const container = document.getElementById(containerId);
+            if (!container) return;
+            container.innerHTML = '<p>Đang tải...</p>';
+
+            const urlWithCacheBusting = `${csvUrl}?t=${new Date().getTime()}`;
+
+            fetch(urlWithCacheBusting)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`Không tìm thấy file: ${csvUrl.split('/').pop().split('?')[0]}`);
+                    }
+                    return response.text();
+                })
+                .then(csvText => {
+                    Papa.parse(csvText, {
+                        header: true,
+                        skipEmptyLines: true,
+                        complete: (results) => {
+                            if (results.errors.length > 0 || results.data.length === 0) {
+                                container.innerHTML = '<p>Không có dữ liệu.</p>';
+                                return;
+                            }
+                            const data = results.data;
+
+                            let listHTML = '<ul style="padding-left: 20px; margin: 0; list-style-type: none;">';
+                            data.forEach(row => {
+                                const title = row.news_title;
+                                const link = row.news_source_link;
+                                if (title && link) {
+                                    listHTML += `<li style="margin-bottom: 12px; font-size: 14px;"><a href="${link}" target="_blank" style="text-decoration: none; color: #0056b3;">${title}</a></li>`;
+                                }
+                            });
+                            listHTML += '</ul>';
+                            container.innerHTML = listHTML;
+                        }
+                    });
+                })
+                .catch(error => {
+                    console.error(`Lỗi khi tải ${containerId}:`, error);
+                    container.innerHTML = `<p style="color: red;">${error.message}</p>`;
+                });
+        }
+
         function loadInfoData(stockCode) {
             companyTitle.textContent = `Thông tin: ${stockCode}`;
-            renderTableFromCsv(`Data/${stockCode}_info.csv`, 'overview-content');
-            renderTableFromCsv(`Data/${stockCode}_shareholders.csv`, 'shareholders-content');
-            renderTableFromCsv(`Data/${stockCode}_BLD.csv`, 'officers-content');
-            renderTableFromCsv(`Data/${stockCode}_con.csv`, 'subsidiaries-content');
-            renderTableFromCsv(`Data/${stockCode}_news10.csv`, 'news-content');
+            renderCompanyProfile(`Data/${stockCode}_info.csv`, 'overview-content');
+            renderShareholdersTable(`Data/${stockCode}_shareholders.csv`, 'shareholders-content');
+            renderOfficersTable(`Data/${stockCode}_BLD.csv`, 'officers-content');
+            renderSubsidiariesTable(`Data/${stockCode}_con.csv`, 'subsidiaries-content');
+            renderNewsList(`Data/${stockCode}_news10.csv`, 'news-content');
         }
 
         async function loadChartData() {
