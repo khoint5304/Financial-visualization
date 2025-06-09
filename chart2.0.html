@@ -129,6 +129,15 @@
         .info-table th {
             background-color: #f8f8f8;
             font-weight: 500;
+            text-align: center;
+        }
+
+        .info-table tbody td {
+            text-align: right;
+        }
+
+        .info-table tbody td:first-child {
+            text-align: left;
         }
 
         .info-table tr:nth-child(even) {
@@ -519,11 +528,35 @@
                                 return;
                             }
 
-                            const headers = allRows[1];
+                            const categoryHeaders = allRows[0];
+                            const metricHeaders = allRows[1];
                             const dataRows = allRows.slice(2);
 
-                            let tableHTML = '<table class="info-table"><thead><tr>';
-                            headers.forEach(header => {
+                            const processedCategories = [];
+                            if (categoryHeaders.length > 0) {
+                                let currentCategory = categoryHeaders[0];
+                                let count = 1;
+                                for (let i = 1; i < categoryHeaders.length; i++) {
+                                    if (categoryHeaders[i] === currentCategory) {
+                                        count++;
+                                    } else {
+                                        processedCategories.push({ name: currentCategory, colspan: count });
+                                        currentCategory = categoryHeaders[i];
+                                        count = 1;
+                                    }
+                                }
+                                processedCategories.push({ name: currentCategory, colspan: count });
+                            }
+
+                            let tableHTML = '<table class="info-table"><thead>';
+                            tableHTML += '<tr>';
+                            processedCategories.forEach(cat => {
+                                tableHTML += `<th colspan="${cat.colspan}">${cat.name}</th>`;
+                            });
+                            tableHTML += '</tr>';
+
+                            tableHTML += '<tr>';
+                            metricHeaders.forEach(header => {
                                 tableHTML += `<th>${header}</th>`;
                             });
                             tableHTML += '</tr></thead><tbody>';
