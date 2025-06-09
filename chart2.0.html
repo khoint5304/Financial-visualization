@@ -114,6 +114,8 @@
             width: 100%;
             border-collapse: collapse;
             font-size: 13px;
+            overflow-x: auto;
+            display: block;
         }
 
         .info-table th,
@@ -121,6 +123,7 @@
             border: 1px solid #ddd;
             padding: 8px;
             text-align: left;
+            white-space: nowrap;
         }
 
         .info-table th {
@@ -130,6 +133,16 @@
 
         .info-table tr:nth-child(even) {
             background-color: #fdfdfd;
+        }
+
+        .period-toggle {
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+
+        .period-toggle label {
+            margin: 0 10px 0 2px;
+            cursor: pointer;
         }
     </style>
 </head>
@@ -169,6 +182,45 @@
             <details class="info-section">
                 <summary>Công ty con & Liên kết</summary>
                 <div class="info-content" id="subsidiaries-content"></div>
+            </details>
+
+            <details class="info-section">
+                <summary>Báo cáo Kết quả Kinh doanh</summary>
+                <div class="info-content" id="kqkd-content-wrapper">
+                    <div class="period-toggle">
+                        <input type="radio" id="kqkd-year" name="kqkd-period" value="year" checked>
+                        <label for="kqkd-year">Năm</label>
+                        <input type="radio" id="kqkd-quarter" name="kqkd-period" value="quarter">
+                        <label for="kqkd-quarter">Quý</label>
+                    </div>
+                    <div id="kqkd-content"></div>
+                </div>
+            </details>
+
+            <details class="info-section">
+                <summary>Chỉ số Tài chính</summary>
+                <div class="info-content" id="cstc-content-wrapper">
+                    <div class="period-toggle">
+                        <input type="radio" id="cstc-year" name="cstc-period" value="year" checked>
+                        <label for="cstc-year">Năm</label>
+                        <input type="radio" id="cstc-quarter" name="cstc-period" value="quarter">
+                        <label for="cstc-quarter">Quý</label>
+                    </div>
+                    <div id="cstc-content"></div>
+                </div>
+            </details>
+
+            <details class="info-section">
+                <summary>Lưu chuyển Tiền tệ</summary>
+                <div class="info-content" id="lctt-content-wrapper">
+                    <div class="period-toggle">
+                        <input type="radio" id="lctt-year" name="lctt-period" value="year" checked>
+                        <label for="lctt-year">Năm</label>
+                        <input type="radio" id="lctt-quarter" name="lctt-period" value="quarter">
+                        <label for="lctt-quarter">Quý</label>
+                    </div>
+                    <div id="lctt-content"></div>
+                </div>
             </details>
 
             <details class="info-section">
@@ -438,6 +490,63 @@
                 });
         }
 
+        function renderFinancialReport(stockCode, reportAbbr, containerId) {
+            const period = document.querySelector(`input[name="${reportAbbr}-period"]:checked`).value;
+            const filename = `Data/${stockCode}_${reportAbbr}_${period}.csv`;
+            renderFinancialTable(filename, containerId);
+        }
+
+        function renderFinancialTable(csvUrl, containerId) {
+            const container = document.getElementById(containerId);
+            if (!container) return;
+            container.innerHTML = '<p>Đang tải...</p>';
+
+            const urlWithCacheBusting = `${csvUrl}?t=${new Date().getTime()}`;
+
+            fetch(urlWithCacheBusting)
+                .then(response => {
+                    if (!response.ok) { throw new Error(`Không tìm thấy file: ${csvUrl.split('/').pop().split('?')[0]}`); }
+                    return response.text();
+                })
+                .then(csvText => {
+                    Papa.parse(csvText, {
+                        header: false,
+                        skipEmptyLines: true,
+                        complete: (results) => {
+                            const allRows = results.data;
+                            if (allRows.length < 2) {
+                                container.innerHTML = '<p>Không có dữ liệu hợp lệ.</p>';
+                                return;
+                            }
+
+                            const headers = allRows[1];
+                            const dataRows = allRows.slice(2);
+
+                            let tableHTML = '<table class="info-table"><thead><tr>';
+                            headers.forEach(header => {
+                                tableHTML += `<th>${header}</th>`;
+                            });
+                            tableHTML += '</tr></thead><tbody>';
+
+                            dataRows.forEach(row => {
+                                tableHTML += '<tr>';
+                                row.forEach(cell => {
+                                    tableHTML += `<td>${cell || ''}</td>`;
+                                });
+                                tableHTML += '</tr>';
+                            });
+
+                            tableHTML += '</tbody></table>';
+                            container.innerHTML = tableHTML;
+                        }
+                    });
+                })
+                .catch(error => {
+                    console.error(`Lỗi khi tải ${containerId}:`, error);
+                    container.innerHTML = `<p style="color: red;">${error.message}</p>`;
+                });
+        }
+
         function loadInfoData(stockCode) {
             companyTitle.textContent = `Thông tin: ${stockCode}`;
             renderCompanyProfile(`Data/${stockCode}_info.csv`, 'overview-content');
@@ -445,6 +554,10 @@
             renderOfficersTable(`Data/${stockCode}_BLD.csv`, 'officers-content');
             renderSubsidiariesTable(`Data/${stockCode}_con.csv`, 'subsidiaries-content');
             renderNewsList(`Data/${stockCode}_news10.csv`, 'news-content');
+
+            renderFinancialReport(stockCode, 'kqkd', 'kqkd-content');
+            renderFinancialReport(stockCode, 'cstc', 'cstc-content');
+            renderFinancialReport(stockCode, 'lctt', 'lctt-content');
         }
 
         async function loadChartData() {
@@ -557,6 +670,26 @@
         stockCodeInput.addEventListener('keypress', (event) => {
             if (event.key === 'Enter') loadChartData();
         });
+
+        document.querySelectorAll('input[name="kqkd-period"]').forEach(radio => {
+            radio.addEventListener('change', () => {
+                const stockCode = stockCodeInput.value.trim().toUpperCase();
+                if (stockCode) renderFinancialReport(stockCode, 'kqkd', 'kqkd-content');
+            });
+        });
+        document.querySelectorAll('input[name="cstc-period"]').forEach(radio => {
+            radio.addEventListener('change', () => {
+                const stockCode = stockCodeInput.value.trim().toUpperCase();
+                if (stockCode) renderFinancialReport(stockCode, 'cstc', 'cstc-content');
+            });
+        });
+        document.querySelectorAll('input[name="lctt-period"]').forEach(radio => {
+            radio.addEventListener('change', () => {
+                const stockCode = stockCodeInput.value.trim().toUpperCase();
+                if (stockCode) renderFinancialReport(stockCode, 'lctt', 'lctt-content');
+            });
+        });
+
         window.addEventListener('resize', () => {
             if (chart) {
                 chart.resize(chartContainer.clientWidth, chartContainer.clientHeight);

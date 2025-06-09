@@ -72,6 +72,42 @@ def get_stock_data_and_save(symbol, interval=DEFAULT_INTERVAL):
             news_df.to_csv(filename, index=False, encoding='utf-8-sig')
             print(f"app.py: Đã lưu 10 tin tức mới nhất của {symbol} vào file: {filename}")
         
+        income_statement_year_df = stock_loader.finance.income_statement(period='year', lang='vi')
+        if income_statement_year_df is not None and not income_statement_year_df.empty:
+            filename = os.path.join(DATA_OUTPUT_DIR, f'{symbol}_kqkd_year.csv')
+            income_statement_year_df.to_csv(filename, index=False, encoding='utf-8-sig')
+            print(f"app.py: Đã lưu báo cáo KQKD (năm) của {symbol} vào file: {filename}")
+
+        income_statement_quarter_df = stock_loader.finance.income_statement(period='quarter', lang='vi')
+        if income_statement_quarter_df is not None and not income_statement_quarter_df.empty:
+            filename = os.path.join(DATA_OUTPUT_DIR, f'{symbol}_kqkd_quarter.csv')
+            income_statement_quarter_df.to_csv(filename, index=False, encoding='utf-8-sig')
+            print(f"app.py: Đã lưu báo cáo KQKD (quý) của {symbol} vào file: {filename}")
+        
+        financial_ratios_year_df = stock_loader.finance.ratio(period='year', lang='vi')
+        if financial_ratios_year_df is not None and not financial_ratios_year_df.empty:
+            filename = os.path.join(DATA_OUTPUT_DIR, f'{symbol}_cstc_year.csv')
+            financial_ratios_year_df.to_csv(filename, index=False, encoding='utf-8-sig')
+            print(f"app.py: Đã lưu chỉ số tài chính (năm) của {symbol} vào file: {filename}")
+
+        financial_ratios_quarter_df = stock_loader.finance.ratio(period='quarter', lang='vi')
+        if financial_ratios_quarter_df is not None and not financial_ratios_quarter_df.empty:
+            filename = os.path.join(DATA_OUTPUT_DIR, f'{symbol}_cstc_quarter.csv')
+            financial_ratios_quarter_df.to_csv(filename, index=False, encoding='utf-8-sig')
+            print(f"app.py: Đã lưu chỉ số tài chính (quý) của {symbol} vào file: {filename}")
+
+        cash_flow_year_df = stock_loader.finance.cash_flow(period='year', lang='vi')
+        if cash_flow_year_df is not None and not cash_flow_year_df.empty:
+            filename = os.path.join(DATA_OUTPUT_DIR, f'{symbol}_lctt_year.csv')
+            cash_flow_year_df.to_csv(filename, index=False, encoding='utf-8-sig')
+            print(f"app.py: Đã lưu lưu chuyển tiền tệ (năm) của {symbol} vào file: {filename}")
+        
+        cash_flow_quarter_df = stock_loader.finance.cash_flow(period='quarter', lang='vi')
+        if cash_flow_quarter_df is not None and not cash_flow_quarter_df.empty:
+            filename = os.path.join(DATA_OUTPUT_DIR, f'{symbol}_lctt_quarter.csv')
+            cash_flow_quarter_df.to_csv(filename, index=False, encoding='utf-8-sig')
+            print(f"app.py: Đã lưu lưu chuyển tiền tệ (quý) của {symbol} vào file: {filename}")
+            
         df_history = stock_loader.quote.history(
             symbol=symbol, 
             start=start_date_str, 
@@ -83,6 +119,8 @@ def get_stock_data_and_save(symbol, interval=DEFAULT_INTERVAL):
             time_col_name = 'time'
             if 'TradingDate' in df_history.columns and 'time' not in df_history.columns:
                 df_history.rename(columns={'TradingDate': 'time'}, inplace=True)
+            
+            df_history.rename(columns={'Open': 'open', 'High': 'high', 'Low': 'low', 'Close': 'close', 'Volume': 'volume'}, inplace=True)
             
             if time_col_name not in df_history.columns:
                 print(f"app.py: Cột '{time_col_name}' không tìm thấy trong dữ liệu trả về.")
