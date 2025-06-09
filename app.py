@@ -42,6 +42,36 @@ def get_stock_data_and_save(symbol, interval=DEFAULT_INTERVAL):
     try:
         stock_loader = Vnstock().stock(symbol=symbol, source='VCI') 
         
+        company_overview_df = stock_loader.company.overview()
+        if company_overview_df is not None and not company_overview_df.empty:
+            filename = os.path.join(DATA_OUTPUT_DIR, f'{symbol}_info.csv')
+            company_overview_df.to_csv(filename, index=False, encoding='utf-8-sig')
+            print(f"app.py: Đã lưu thông tin tổng quan của {symbol} vào file: {filename}")
+
+        shareholders_df = stock_loader.company.shareholders()
+        if shareholders_df is not None and not shareholders_df.empty:
+            filename = os.path.join(DATA_OUTPUT_DIR, f'{symbol}_shareholders.csv')
+            shareholders_df.to_csv(filename, index=False, encoding='utf-8-sig')
+            print(f"app.py: Đã lưu thông tin cổ đông của {symbol} vào file: {filename}")
+
+        officers_df = stock_loader.company.officers(filter_by='working')
+        if officers_df is not None and not officers_df.empty:
+            filename = os.path.join(DATA_OUTPUT_DIR, f'{symbol}_BLD.csv')
+            officers_df.to_csv(filename, index=False, encoding='utf-8-sig')
+            print(f"app.py: Đã lưu thông tin ban lãnh đạo của {symbol} vào file: {filename}")
+
+        subsidiaries_df = stock_loader.company.subsidiaries()
+        if subsidiaries_df is not None and not subsidiaries_df.empty:
+            filename = os.path.join(DATA_OUTPUT_DIR, f'{symbol}_con.csv')
+            subsidiaries_df.to_csv(filename, index=False, encoding='utf-8-sig')
+            print(f"app.py: Đã lưu thông tin công ty con của {symbol} vào file: {filename}")
+
+        news_df = stock_loader.company.news().head(10)
+        if news_df is not None and not news_df.empty:
+            filename = os.path.join(DATA_OUTPUT_DIR, f'{symbol}_news10.csv')
+            news_df.to_csv(filename, index=False, encoding='utf-8-sig')
+            print(f"app.py: Đã lưu 10 tin tức mới nhất của {symbol} vào file: {filename}")
+        
         df_history = stock_loader.quote.history(
             symbol=symbol, 
             start=start_date_str, 
