@@ -118,6 +118,8 @@
             display: block;
         }
 
+
+
         .info-table th,
         .info-table td {
             border: 1px solid #ddd;
@@ -157,12 +159,52 @@
         #chart-legend {
             position: absolute;
             top: 12px;
-            left: 12px;
+            left: 50px;
             z-index: 100;
             font-size: 14px;
             font-family: monospace;
             display: none;
             pointer-events: none;
+            background: rgba(255, 255, 255, 0.8);
+            padding: 5px;
+            border-radius: 4px;
+            border: 1px solid #e0e3eb;
+        }
+
+        #drawing-toolbar {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            z-index: 200;
+            display: flex;
+            flex-direction: column;
+            background-color: #ffffff;
+            border: 1px solid #e0e3eb;
+            border-radius: 4px;
+            overflow: hidden;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        #drawing-toolbar button {
+            background-color: transparent;
+            border: none;
+            cursor: pointer;
+            padding: 8px;
+            font-size: 20px;
+            line-height: 1;
+            border-bottom: 1px solid #f1f3f6;
+        }
+
+        #drawing-toolbar button:last-child {
+            border-bottom: none;
+        }
+
+        #drawing-toolbar button:hover {
+            background-color: #f1f3f6;
+        }
+
+        #drawing-toolbar button.active {
+            background-color: #e0e3eb;
         }
     </style>
 </head>
@@ -181,6 +223,11 @@
 
     <div class="main-content">
         <div id="chartContainer">
+            <div id="drawing-toolbar">
+                <button id="tool-cursor" title="Cursor">👆</button>
+                <button id="tool-trendline" title="Trend Line">📈</button>
+                <button id="tool-delete" title="Delete Last Drawing">🗑️</button>
+            </div>
             <div id="chart-legend"></div>
         </div>
         <div id="infoContainer">
@@ -268,6 +315,12 @@
         let maSeries = null;
         const SUPPORTED_INTERVALS = ['1h', '1D', '1W', '1M'];
         const DEFAULT_INTERVAL = '1D';
+
+        let currentDrawingTool = 'cursor';
+        let isDrawing = false;
+        let startPoint = null;
+        let currentDrawing = null;
+        let allTrendLines = [];
 
         function renderCompanyProfile(csvUrl, containerId) {
             const container = document.getElementById(containerId);
@@ -710,6 +763,11 @@
             if (chart) {
                 chart.remove();
             }
+            isDrawing = false;
+            startPoint = null;
+            currentDrawing = null;
+            allTrendLines = [];
+
             chart = LightweightCharts.createChart(chartContainer, {
                 width: chartContainer.clientWidth,
                 height: chartContainer.clientHeight,
@@ -726,7 +784,7 @@
                 timeScale: { borderColor: 'rgba(197, 203, 206, 0.8)', timeVisible: true, secondsVisible: false },
             });
 
-            maSeries = chart.addSeries(LightweightCharts.LineSeries, { color: '#2962FF', lineWidth: 2 });
+            maSeries = chart.addSeries(LightweightCharts.LineSeries, { color: '#2962FF', lineWidth: 2, crosshairMarkerVisible: false });
 
             candlestickSeries = chart.addSeries(LightweightCharts.CandlestickSeries, {
                 upColor: '#26a69a',
@@ -758,40 +816,106 @@
                 },
             });
 
-            chart.subscribeCrosshairMove(param => {
-                if (param.time === undefined || !param.seriesData.has(candlestickSeries)) {
-                    chartLegend.style.display = 'none';
+            chart.subscribeClick(param => {
+                if (currentDrawingTool !== 'trendline' || !param.point || !param.time) {
                     return;
                 }
-                chartLegend.style.display = 'block';
+
+                const price = candlestickSeries.coordinateToPrice(param.point.y);
+                if (!price) return;
+
+                if (!isDrawing) {
+                    isDrawing = true;
+                    startPoint = { time: param.time, value: price };
+                    currentDrawing = chart.addSeries(LightweightCharts.LineSeries, {
+                        color: 'black',
+                        lineWidth: 1,
+                        lineStyle: LightweightCharts.LineStyle.Dashed,
+                        crosshairMarkerVisible: false,
+                        lastValueVisible: false,
+                        priceLineVisible: false,
+                    });
+                    currentDrawing.setData([startPoint]);
+                } else {
+                    currentDrawing.setData([startPoint, { time: param.time, value: price }]);
+                    allTrendLines.push(currentDrawing);
+                    isDrawing = false;
+                    startPoint = null;
+                    currentDrawing = null;
+                }
+            });
+
+            chart.subscribeCrosshairMove(param => {
+                const legendEl = chartLegend;
+                if (param.time === undefined || !param.point) {
+                    legendEl.style.display = 'none';
+                    return;
+                }
 
                 const candleData = param.seriesData.get(candlestickSeries);
-                const volumeData = param.seriesData.get(volumeSeries);
-                const maData = param.seriesData.get(maSeries);
+                if (candleData) {
+                    legendEl.style.display = 'block';
+                    const volumeData = param.seriesData.get(volumeSeries);
+                    const maData = param.seriesData.get(maSeries);
 
-                const o = candleData.open.toFixed(2);
-                const h = candleData.high.toFixed(2);
-                const l = candleData.low.toFixed(2);
-                const c = candleData.close.toFixed(2);
+                    const o = candleData.open.toFixed(2);
+                    const h = candleData.high.toFixed(2);
+                    const l = candleData.low.toFixed(2);
+                    const c = candleData.close.toFixed(2);
+                    const vol = volumeData ? volumeData.value.toLocaleString('en-US') : 'N/A';
+                    const maValue = maData ? maData.value.toFixed(2) : 'N/A';
+                    const color = c >= o ? '#26a69a' : '#ef5350';
 
-                const vol = volumeData ? volumeData.value.toLocaleString('en-US') : 'N/A';
-                const maValue = maData ? maData.value.toFixed(2) : 'N/A';
+                    legendEl.innerHTML = `
+                        <div style="font-size: 16px; margin-bottom: 4px;">
+                            <strong style="color: ${color}">${stockCodeInput.value.toUpperCase()}</strong>
+                            <span style="color: #2962FF; margin-left: 10px;">MA(20): ${maValue}</span>
+                        </div>
+                        <div>
+                            <span style="color: #777;">O:</span><span style="color: ${color};">${o}</span>
+                            <span style="color: #777; margin-left: 5px;">H:</span><span style="color: ${color};">${h}</span>
+                            <span style="color: #777; margin-left: 5px;">L:</span><span style="color: ${color};">${l}</span>
+                            <span style="color: #777; margin-left: 5px;">C:</span><span style="color: ${color};">${c}</span>
+                            <span style="color: #777; margin-left: 10px;">Vol:</span><span style="color: ${color};">${vol}</span>
+                        </div>
+                    `;
+                } else {
+                    legendEl.style.display = 'none';
+                }
 
-                const color = c >= o ? '#26a69a' : '#ef5350';
+                if (isDrawing && startPoint && currentDrawing) {
+                    const price = candlestickSeries.coordinateToPrice(param.point.y);
+                    if (!price) return;
+                    currentDrawing.setData([startPoint, { time: param.time, value: price }]);
+                }
+            });
+        }
 
-                chartLegend.innerHTML = `
-                    <div style="font-size: 16px; margin-bottom: 4px;">
-                        <strong style="color: ${color}">${stockCodeInput.value.toUpperCase()}</strong>
-                        <span style="color: #2962FF; margin-left: 10px;">MA(20): ${maValue}</span>
-                    </div>
-                    <div>
-                        <span style="color: #777;">O:</span><span style="color: ${color};">${o}</span>
-                        <span style="color: #777; margin-left: 5px;">H:</span><span style="color: ${color};">${h}</span>
-                        <span style="color: #777; margin-left: 5px;">L:</span><span style="color: ${color};">${l}</span>
-                        <span style="color: #777; margin-left: 5px;">C:</span><span style="color: ${color};">${c}</span>
-                        <span style="color: #777; margin-left: 10px;">Vol:</span><span style="color: ${color};">${vol}</span>
-                    </div>
-                `;
+        function deleteLastDrawing() {
+            if (allTrendLines.length === 0) return;
+            const lineToRemove = allTrendLines.pop();
+            chart.removeSeries(lineToRemove);
+        }
+
+        function setActiveTool(tool) {
+            if (isDrawing && currentDrawing) {
+                chart.removeSeries(currentDrawing);
+            }
+            isDrawing = false;
+            startPoint = null;
+            currentDrawing = null;
+
+            currentDrawingTool = tool;
+
+            document.getElementById('tool-cursor').classList.remove('active');
+            document.getElementById('tool-trendline').classList.remove('active');
+            document.getElementById(`tool-${tool}`).classList.add('active');
+
+            const crosshairMode = tool === 'cursor' ? LightweightCharts.CrosshairMode.Normal : LightweightCharts.CrosshairMode.Magnet;
+            chart.applyOptions({
+                crosshair: {
+                    mode: crosshairMode,
+                },
             });
         }
 
@@ -814,6 +938,11 @@
         stockCodeInput.addEventListener('keypress', (event) => {
             if (event.key === 'Enter') loadChartData();
         });
+
+        document.getElementById('tool-cursor').addEventListener('click', () => setActiveTool('cursor'));
+        document.getElementById('tool-trendline').addEventListener('click', () => setActiveTool('trendline'));
+        document.getElementById('tool-delete').addEventListener('click', deleteLastDrawing);
+
 
         document.querySelectorAll('input[name="kqkd-period"]').forEach(radio => {
             radio.addEventListener('change', () => {
@@ -843,6 +972,7 @@
             populateIntervalSelect();
             setStatus("Nhập mã cổ phiếu và nhấn 'Tải Dữ Liệu'");
             loadChartData();
+            document.getElementById('tool-cursor').classList.add('active');
         });
     </script>
 </body>
