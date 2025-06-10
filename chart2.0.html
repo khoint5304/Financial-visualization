@@ -153,6 +153,17 @@
             margin: 0 10px 0 2px;
             cursor: pointer;
         }
+
+        #chart-legend {
+            position: absolute;
+            top: 12px;
+            left: 12px;
+            z-index: 100;
+            font-size: 14px;
+            font-family: monospace;
+            display: none;
+            pointer-events: none;
+        }
     </style>
 </head>
 
@@ -169,7 +180,9 @@
     </div>
 
     <div class="main-content">
-        <div id="chartContainer"></div>
+        <div id="chartContainer">
+            <div id="chart-legend"></div>
+        </div>
         <div id="infoContainer">
             <h2 id="company-title" style="margin-top: 0;">Thông tin Công ty</h2>
 
@@ -247,9 +260,12 @@
         const intervalSelect = document.getElementById('intervalSelect');
         const loadChartButton = document.getElementById('loadChartButton');
         const statusMessage = document.getElementById('statusMessage');
+        const chartLegend = document.getElementById('chart-legend');
 
         let chart = null;
         let candlestickSeries = null;
+        let volumeSeries = null;
+        let maSeries = null;
         const SUPPORTED_INTERVALS = ['1h', '1D', '1W', '1M'];
         const DEFAULT_INTERVAL = '1D';
 
@@ -580,6 +596,23 @@
                 });
         }
 
+        function calculateMovingAverageSeriesData(candleData, maLength) {
+            const maData = [];
+            for (let i = 0; i < candleData.length; i++) {
+                if (i < maLength) {
+                    maData.push({ time: candleData[i].time });
+                } else {
+                    let sum = 0;
+                    for (let j = 0; j < maLength; j++) {
+                        sum += candleData[i - j].close;
+                    }
+                    const maValue = sum / maLength;
+                    maData.push({ time: candleData[i].time, value: maValue });
+                }
+            }
+            return maData;
+        }
+
         function loadInfoData(stockCode) {
             companyTitle.textContent = `Thông tin: ${stockCode}`;
             renderCompanyProfile(`Data/${stockCode}_info.csv`, 'overview-content');
@@ -622,27 +655,44 @@
                         if (results.errors.length > 0 || results.data.length === 0) {
                             setStatus(`Lỗi xử lý hoặc không có dữ liệu biểu đồ cho ${stockCode}.`, true);
                             if (candlestickSeries) candlestickSeries.setData([]);
+                            if (volumeSeries) volumeSeries.setData([]);
+                            if (maSeries) maSeries.setData([]);
                             return;
                         }
 
-                        const chartData = results.data.map(row => ({
-                            time: row.time,
-                            open: row.open,
-                            high: row.high,
-                            low: row.low,
-                            close: row.close
-                        })).filter(item =>
-                            item.time !== undefined && item.time !== null &&
-                            [item.open, item.high, item.low, item.close].every(v => typeof v === 'number')
+                        const validData = results.data.filter(row =>
+                            row.time !== undefined && row.time !== null &&
+                            ['open', 'high', 'low', 'close', 'volume'].every(key => typeof row[key] === 'number')
                         );
 
-                        if (chartData.length > 0) {
-                            candlestickSeries.setData(chartData);
+                        if (validData.length > 0) {
+                            const candlestickData = validData.map(row => ({
+                                time: row.time,
+                                open: row.open,
+                                high: row.high,
+                                low: row.low,
+                                close: row.close,
+                            }));
+
+                            const volumeData = validData.map(row => ({
+                                time: row.time,
+                                value: row.volume,
+                                color: row.close >= row.open ? '#26a69a' : '#ff0000',
+                            }));
+
+                            const maData = calculateMovingAverageSeriesData(candlestickData, 20);
+
+                            maSeries.setData(maData);
+                            candlestickSeries.setData(candlestickData);
+                            volumeSeries.setData(volumeData);
+
                             setStatus(`Hiển thị dữ liệu cho ${stockCode} (Khung: ${selectedInterval})`);
                             chart.timeScale().fitContent();
                         } else {
                             setStatus(`Không có dữ liệu biểu đồ hợp lệ cho ${stockCode}.`, true);
                             if (candlestickSeries) candlestickSeries.setData([]);
+                            if (volumeSeries) volumeSeries.setData([]);
+                            if (maSeries) maSeries.setData([]);
                         }
                     }
                 });
@@ -651,6 +701,8 @@
                 console.error("Lỗi tải dữ liệu biểu đồ:", error);
                 setStatus(`Lỗi: ${error.message}`, true);
                 if (candlestickSeries) candlestickSeries.setData([]);
+                if (volumeSeries) volumeSeries.setData([]);
+                if (maSeries) maSeries.setData([]);
             }
         }
 
@@ -674,13 +726,72 @@
                 timeScale: { borderColor: 'rgba(197, 203, 206, 0.8)', timeVisible: true, secondsVisible: false },
             });
 
+            maSeries = chart.addSeries(LightweightCharts.LineSeries, { color: '#2962FF', lineWidth: 2 });
+
             candlestickSeries = chart.addSeries(LightweightCharts.CandlestickSeries, {
                 upColor: '#26a69a',
-                downColor: '#ef5350',
-                borderDownColor: '#ef5350',
+                downColor: '#ff0000',
+                borderDownColor: '#ff0000',
                 borderUpColor: '#26a69a',
-                wickDownColor: '#ef5350',
+                wickDownColor: '#ff0000',
                 wickUpColor: '#26a69a',
+            });
+
+            candlestickSeries.priceScale().applyOptions({
+                scaleMargins: {
+                    top: 0.1,
+                    bottom: 0.3,
+                },
+            });
+
+            volumeSeries = chart.addSeries(LightweightCharts.HistogramSeries, {
+                priceFormat: {
+                    type: 'volume',
+                },
+                priceScaleId: '',
+            });
+
+            volumeSeries.priceScale().applyOptions({
+                scaleMargins: {
+                    top: 0.7,
+                    bottom: 0,
+                },
+            });
+
+            chart.subscribeCrosshairMove(param => {
+                if (param.time === undefined || !param.seriesData.has(candlestickSeries)) {
+                    chartLegend.style.display = 'none';
+                    return;
+                }
+                chartLegend.style.display = 'block';
+
+                const candleData = param.seriesData.get(candlestickSeries);
+                const volumeData = param.seriesData.get(volumeSeries);
+                const maData = param.seriesData.get(maSeries);
+
+                const o = candleData.open.toFixed(2);
+                const h = candleData.high.toFixed(2);
+                const l = candleData.low.toFixed(2);
+                const c = candleData.close.toFixed(2);
+
+                const vol = volumeData ? volumeData.value.toLocaleString('en-US') : 'N/A';
+                const maValue = maData ? maData.value.toFixed(2) : 'N/A';
+
+                const color = c >= o ? '#26a69a' : '#ef5350';
+
+                chartLegend.innerHTML = `
+                    <div style="font-size: 16px; margin-bottom: 4px;">
+                        <strong style="color: ${color}">${stockCodeInput.value.toUpperCase()}</strong>
+                        <span style="color: #2962FF; margin-left: 10px;">MA(20): ${maValue}</span>
+                    </div>
+                    <div>
+                        <span style="color: #777;">O:</span><span style="color: ${color};">${o}</span>
+                        <span style="color: #777; margin-left: 5px;">H:</span><span style="color: ${color};">${h}</span>
+                        <span style="color: #777; margin-left: 5px;">L:</span><span style="color: ${color};">${l}</span>
+                        <span style="color: #777; margin-left: 5px;">C:</span><span style="color: ${color};">${c}</span>
+                        <span style="color: #777; margin-left: 10px;">Vol:</span><span style="color: ${color};">${vol}</span>
+                    </div>
+                `;
             });
         }
 
